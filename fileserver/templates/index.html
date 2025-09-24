@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Index of {{ current_path }}</title>
+</head>
+<body>
+<h2>Index of {{ current_path }}</h2>
+<table style="text-align: center" width="100%">
+    <thead>
+    <tr>
+        <th>Name</th>
+        <th>Last Modified</th>
+        <th>Size</th>
+        <th>Type</th>
+    </tr>
+    </thead>
+    <tbody>
+    {% if parent_url %}
+    <tr>
+        <td><a href="{{ parent_url }}">../</a></td>
+        <td></td>
+        <td></td>
+        <td>Directory</td>
+    </tr>
+    {% endif %}
+    {% for path in paths %}
+    <tr>
+        <td><a href="{{ path.url }}">{{ path.name }}</a></td>
+        <td>{{ path.last_modified }}</td>
+        <td>{{ path.size }}</td>
+        <td>{{ path.type }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</body>
