@@ -1,5 +1,5 @@
 [project]
-name = "external-fileserver"
+name = "fileserver"
 version = "1.0"
 requires-python = ">=3.7"
 dependencies = [
