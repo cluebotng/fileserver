@@ -91,6 +91,11 @@ if write_api_key := os.environ.get("FILE_API_KEY"):
         return HTMLResponse(status_code=201)
 
 
+@app.get("/_/health", response_class=HTMLResponse)
+async def health_check():
+    return HTMLResponse(status_code=200)
+
+
 @app.get("/", response_class=HTMLResponse)
 @app.get("/{path:path}", response_class=HTMLResponse)
 async def list_files(path: Optional[str] = None):
