@@ -86,7 +86,8 @@ if write_api_key := os.environ.get("FILE_API_KEY"):
             return HTMLResponse(status_code=200)
 
         with target_path.open("wb") as fh:
-            fh.write(await request.body())
+            async for chunk in request.stream():
+                fh.write(chunk)
 
         return HTMLResponse(status_code=201)
 

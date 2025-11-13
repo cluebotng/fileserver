@@ -1,8 +1,8 @@
 [project]
 name = "fileserver"
 version = "1.0"
-requires-python = ">=3.7"
+requires-python = ">=3.13"
 dependencies = [
-    "fastapi[standard] ; python_version >= '3.8'",
+    "fastapi[standard]",
     "Jinja2",
 ]
