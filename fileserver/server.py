@@ -66,6 +66,7 @@ app = FastAPI()
 
 if write_api_key := os.environ.get("FILE_API_KEY"):
 
+    @app.put("/{path:path}", response_class=HTMLResponse)
     @app.post("/{path:path}", response_class=HTMLResponse)
     async def put_file(path: str, request: Request):
         base_directory = _get_public_html_directory()
