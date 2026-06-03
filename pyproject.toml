@@ -6,4 +6,6 @@ dependencies = [
     "fastapi[standard]",
     "Jinja2",
     "pydantic>=2.10",
+    "python-keystoneclient",
+    "python-swiftclient",
 ]
