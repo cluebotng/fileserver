@@ -27,8 +27,8 @@
     {% for path in paths %}
     <tr>
         <td><a href="{{ path.url }}">{{ path.name }}</a></td>
-        <td>{{ path.last_modified }}</td>
-        <td>{{ path.size }}</td>
+        <td>{% if path.type != 'Directory' %}{{ path.last_modified }}{% endif %}</td>
+        <td>{% if path.type != 'Directory' %}{{ path.size }}{% endif %}</td>
         <td>{{ path.type }}</td>
     </tr>
     {% endfor %}
