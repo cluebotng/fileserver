@@ -1,12 +1,10 @@
 import os
-from datetime import datetime
+from functools import lru_cache
+from pathlib import PosixPath
 from typing import Optional
 
-from pathlib import PosixPath
 
-import mimetypes
-
-
+@lru_cache(maxsize=1)
 def _get_public_html_directory() -> Optional[PosixPath]:
     if tool_data_dir := os.environ.get("TOOL_DATA_DIR"):
         path = PosixPath(tool_data_dir) / "public_html"
