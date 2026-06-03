@@ -60,8 +60,24 @@ if write_api_key := os.environ.get("FILE_API_KEY"):
             # Return 200 to make the client not treat this as a failure
             return HTMLResponse(status_code=200)
 
-        content = b"".join([chunk async for chunk in request.stream()])
-        await asyncio.to_thread(storage.write_file, path, content)
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue(maxsize=8)
+
+        async def fill_queue():
+            async for chunk in request.stream():
+                await queue.put(chunk)
+            await queue.put(None)
+
+        def sync_chunks():
+            while True:
+                chunk = asyncio.run_coroutine_threadsafe(queue.get(), loop).result()
+                if chunk is None:
+                    return
+                yield chunk
+
+        fill_task = asyncio.create_task(fill_queue())
+        await asyncio.to_thread(storage.write_file, path, sync_chunks())
+        await fill_task
         return HTMLResponse(status_code=201)
 
 

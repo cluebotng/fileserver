@@ -1,8 +1,8 @@
-import io
 import logging
 import mimetypes
 import os
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from datetime import datetime
 from functools import lru_cache
 from pathlib import PosixPath
@@ -35,7 +35,7 @@ class StorageBackend(ABC):
     def file_exists(self, path: str) -> bool: ...
 
     @abstractmethod
-    def write_file(self, path: str, content: bytes) -> None: ...
+    def write_file(self, path: str, content: Iterable[bytes]) -> None: ...
 
 
 class LocalStorageBackend(StorageBackend):
@@ -91,12 +91,13 @@ class LocalStorageBackend(StorageBackend):
     def file_exists(self, path: str) -> bool:
         return self._resolve(path).is_file()
 
-    def write_file(self, path: str, content: bytes) -> None:
+    def write_file(self, path: str, content: Iterable[bytes]) -> None:
         target = self._resolve(path)
         if not target.parent.is_dir():
             target.parent.mkdir(parents=True)
         with target.open("wb") as fh:
-            fh.write(content)
+            for chunk in content:
+                fh.write(chunk)
 
 
 class SwiftStorageBackend(StorageBackend):
@@ -192,20 +193,18 @@ class SwiftStorageBackend(StorageBackend):
     def file_exists(self, path: str) -> bool:
         return self.path_is_file(path)
 
-    def write_file(self, path: str, content: bytes) -> None:
+    def write_file(self, path: str, content: Iterable[bytes]) -> None:
         obj_name = path.strip("/")
         mime_type, _ = mimetypes.guess_type(obj_name)
         try:
             self._conn.put_object(
                 self._container,
                 obj_name,
-                contents=io.BytesIO(content),
-                content_length=len(content),
+                contents=content,
                 content_type=mime_type or "application/octet-stream",
             )
         except Exception:
             logger.exception("Error writing file: %s", path)
-            return Response(status_code=500)
 
 
 def _build_swift_backend() -> Optional[StorageBackend]:
