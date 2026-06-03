@@ -1,16 +1,13 @@
-import mimetypes
+import asyncio
 import os
-from datetime import datetime
-from pathlib import PosixPath
 from typing import Optional
 
-from fastapi import FastAPI
-from fastapi import Request
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
 from jinja2 import Environment, PackageLoader, select_autoescape
 
-from fileserver.models import RenderablePath
-from fileserver.utils import _get_public_html_directory, _have_valid_token
+from fileserver.storage import StorageBackend, get_storage_backend
+from fileserver.utils import _have_valid_token
 
 
 _jinja_env = Environment(
@@ -20,49 +17,27 @@ _jinja_env = Environment(
 _listing_template = _jinja_env.get_template("index.html")
 
 
-def _render_listing(base_directory: PosixPath, target_path: PosixPath) -> HTMLResponse:
-    paths = []
-    with os.scandir(target_path) as it:
-        for entry in it:
-            try:
-                entry_stat = entry.stat()
-            except OSError:
-                continue
-            entry_path = PosixPath(entry.path)
-            if entry.is_dir(follow_symlinks=True):
-                paths.append(
-                    RenderablePath(
-                        name=entry.name,
-                        url=f"/{entry_path.relative_to(base_directory).as_posix()}/",
-                        last_modified=datetime.fromtimestamp(entry_stat.st_mtime),
-                        size=entry_stat.st_size,
-                        type="Directory",
-                    )
-                )
-            elif entry.is_file(follow_symlinks=True):
-                paths.append(
-                    RenderablePath(
-                        name=entry.name,
-                        url=f"/{entry_path.relative_to(base_directory).as_posix()}",
-                        last_modified=datetime.fromtimestamp(entry_stat.st_mtime),
-                        size=entry_stat.st_size,
-                        type="File",
-                    )
-                )
+def _get_storage() -> StorageBackend:
+    storage = get_storage_backend()
+    if storage is None:
+        raise RuntimeError("No storage backend available")
+    return storage
 
-    current_path_name = target_path.relative_to(base_directory).name
+
+def _render_listing(storage: StorageBackend, path: str) -> HTMLResponse:
+    stripped = path.strip("/")
+    current_path = f"/{stripped}/" if stripped else "/"
+    if stripped:
+        parent = stripped.rsplit("/", 1)[0]
+        parent_url = f"/{parent}/" if parent else "/"
+    else:
+        parent_url = None
+
+    paths = storage.list_path(stripped)
     return HTMLResponse(
         _listing_template.render(
-            parent_url=(
-                None
-                if current_path_name in {".", ""}
-                else f"/{target_path.parent.relative_to(base_directory).as_posix()}/"
-            ),
-            current_path=(
-                "/"
-                if current_path_name in {".", ""}
-                else f"/{target_path.relative_to(base_directory).as_posix()}/"
-            ),
+            parent_url=parent_url,
+            current_path=current_path,
             paths=sorted(paths, key=lambda x: (x.type, x.name)),
         )
     )
@@ -75,27 +50,18 @@ if write_api_key := os.environ.get("FILE_API_KEY"):
     @app.put("/{path:path}", response_class=HTMLResponse)
     @app.post("/{path:path}", response_class=HTMLResponse)
     async def put_file(path: str, request: Request):
-        base_directory = _get_public_html_directory()
-        if base_directory is None:
-            raise RuntimeError("Failed to find public_html directory")
+        storage = _get_storage()
 
         if not _have_valid_token(request.headers.get("Authorization"), write_api_key):
             return HTMLResponse(status_code=403)
 
-        target_path = base_directory / path if path else base_directory
-
-        if not target_path.parent.is_dir():
-            target_path.parent.mkdir(parents=True)
-
-        if target_path.is_file():
+        if await asyncio.to_thread(storage.file_exists, path):
             # File already exists, don't overwrite it
-            # Return 200 to make the client not treat this as a failure, assume the content is the same
+            # Return 200 to make the client not treat this as a failure
             return HTMLResponse(status_code=200)
 
-        with target_path.open("wb") as fh:
-            async for chunk in request.stream():
-                fh.write(chunk)
-
+        content = b"".join([chunk async for chunk in request.stream()])
+        await asyncio.to_thread(storage.write_file, path, content)
         return HTMLResponse(status_code=201)
 
 
@@ -107,17 +73,13 @@ async def health_check():
 @app.get("/", response_class=HTMLResponse)
 @app.get("/{path:path}", response_class=HTMLResponse)
 async def list_files(path: Optional[str] = None):
-    base_directory = _get_public_html_directory()
-    if base_directory is None:
-        raise RuntimeError("Failed to find public_html directory")
+    storage = _get_storage()
+    path = path or ""
 
-    target_path = base_directory / path if path else base_directory
+    if await asyncio.to_thread(storage.path_is_dir, path):
+        return await asyncio.to_thread(_render_listing, storage, path)
 
-    if target_path.is_dir():
-        return _render_listing(base_directory, target_path)
-
-    if target_path.is_file():
-        mime_type, _ = mimetypes.guess_type(target_path.as_posix())
-        return FileResponse(target_path, media_type=mime_type)
+    if await asyncio.to_thread(storage.path_is_file, path):
+        return await asyncio.to_thread(storage.get_file_response, path)
 
     return HTMLResponse(status_code=404)
