@@ -12,7 +12,7 @@ from keystoneauth1.identity import v3
 from swiftclient import Connection
 from swiftclient.exceptions import ClientException
 
-from starlette.responses import FileResponse, Response
+from starlette.responses import FileResponse, Response, StreamingResponse
 from fileserver.models import RenderablePath
 
 logger = logging.getLogger(__name__)
@@ -183,12 +183,14 @@ class SwiftStorageBackend(StorageBackend):
 
     def get_file_response(self, path: str) -> Response:
         try:
-            headers, content = self._conn.get_object(self._container, path.strip("/"))
+            headers, content = self._conn.get_object(
+                self._container, path.strip("/"), resp_chunk_size=65536
+            )
         except Exception:
             logger.exception("Error getting file: %s", path)
             return Response(status_code=404)
         content_type = headers.get("content-type") or mimetypes.guess_type(path)[0]
-        return Response(content=content, media_type=content_type)
+        return StreamingResponse(content, media_type=content_type)
 
     def file_exists(self, path: str) -> bool:
         return self.path_is_file(path)
