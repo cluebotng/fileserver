@@ -13,40 +13,46 @@ from fileserver.models import RenderablePath
 from fileserver.utils import _get_public_html_directory, _have_valid_token
 
 
-def _render_listing(base_directory: PosixPath, target_path: PosixPath) -> None:
-    paths = set()
-    for path in target_path.iterdir():
-        if path.is_dir():
-            stat = path.lstat()
-            paths.add(
-                RenderablePath(
-                    name=path.name,
-                    url=f"/{path.relative_to(base_directory).as_posix()}/",
-                    last_modified=datetime.fromtimestamp(stat.st_mtime),
-                    size=stat.st_size,
-                    type="Directory",
-                )
-            )
-        if path.is_file():
-            stat = path.lstat()
-            paths.add(
-                RenderablePath(
-                    name=path.name,
-                    url=f"/{path.relative_to(base_directory).as_posix()}",
-                    last_modified=datetime.fromtimestamp(stat.st_mtime),
-                    size=stat.st_size,
-                    type="File",
-                )
-            )
+_jinja_env = Environment(
+    loader=PackageLoader("fileserver"),
+    autoescape=select_autoescape(),
+)
+_listing_template = _jinja_env.get_template("index.html")
 
-    template = Environment(
-        loader=PackageLoader("fileserver"),
-        autoescape=select_autoescape(),
-    ).get_template("index.html")
+
+def _render_listing(base_directory: PosixPath, target_path: PosixPath) -> HTMLResponse:
+    paths = []
+    with os.scandir(target_path) as it:
+        for entry in it:
+            try:
+                entry_stat = entry.stat()
+            except OSError:
+                continue
+            entry_path = PosixPath(entry.path)
+            if entry.is_dir(follow_symlinks=True):
+                paths.append(
+                    RenderablePath(
+                        name=entry.name,
+                        url=f"/{entry_path.relative_to(base_directory).as_posix()}/",
+                        last_modified=datetime.fromtimestamp(entry_stat.st_mtime),
+                        size=entry_stat.st_size,
+                        type="Directory",
+                    )
+                )
+            elif entry.is_file(follow_symlinks=True):
+                paths.append(
+                    RenderablePath(
+                        name=entry.name,
+                        url=f"/{entry_path.relative_to(base_directory).as_posix()}",
+                        last_modified=datetime.fromtimestamp(entry_stat.st_mtime),
+                        size=entry_stat.st_size,
+                        type="File",
+                    )
+                )
 
     current_path_name = target_path.relative_to(base_directory).name
     return HTMLResponse(
-        template.render(
+        _listing_template.render(
             parent_url=(
                 None
                 if current_path_name in {".", ""}
