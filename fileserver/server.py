@@ -1,5 +1,7 @@
 import asyncio
 import os
+import threading
+import time
 from typing import Optional
 
 from fastapi import FastAPI, Request
@@ -15,6 +17,29 @@ _jinja_env = Environment(
     autoescape=select_autoescape(),
 )
 _listing_template = _jinja_env.get_template("index.html")
+_INDEX_CACHE_TTL_SECONDS = 30
+_INDEX_CACHE_MAX_ENTRIES = 128
+_index_cache: dict[str, tuple[float, list]] = {}
+_index_cache_lock = threading.Lock()
+
+
+def _list_path_cached(storage: StorageBackend, path: str):
+    now = time.monotonic()
+    with _index_cache_lock:
+        cached = _index_cache.get(path)
+        if cached and cached[0] > now:
+            return list(cached[1])
+
+    paths = storage.list_path(path)
+    with _index_cache_lock:
+        if len(_index_cache) >= _INDEX_CACHE_MAX_ENTRIES:
+            expired = [key for key, (expires, _) in _index_cache.items() if expires <= now]
+            for key in expired:
+                _index_cache.pop(key, None)
+            if len(_index_cache) >= _INDEX_CACHE_MAX_ENTRIES:
+                _index_cache.pop(next(iter(_index_cache)))
+        _index_cache[path] = (now + _INDEX_CACHE_TTL_SECONDS, paths)
+    return list(paths)
 
 
 def _get_storage() -> StorageBackend:
@@ -33,7 +58,7 @@ def _render_listing(storage: StorageBackend, path: str) -> HTMLResponse:
     else:
         parent_url = None
 
-    paths = storage.list_path(stripped)
+    paths = _list_path_cached(storage, stripped)
     return HTMLResponse(
         _listing_template.render(
             parent_url=parent_url,

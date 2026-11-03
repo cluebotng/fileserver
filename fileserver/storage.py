@@ -1,6 +1,7 @@
 import logging
 import mimetypes
 import os
+import socket
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from datetime import datetime
@@ -123,6 +124,8 @@ class SwiftStorageBackend(StorageBackend):
                 return False
             logger.exception("Error checking if path is dir: %s", path)
             return False
+        except (TimeoutError, socket.timeout):
+            raise
         except Exception:
             logger.exception("Error checking if path is dir: %s", path)
             return False
@@ -136,6 +139,8 @@ class SwiftStorageBackend(StorageBackend):
                 return False
             logger.exception("Error checking if path is file: %s", path)
             return False
+        except (TimeoutError, socket.timeout):
+            raise
         except Exception:
             logger.exception("Error checking if path is file: %s", path)
             return False
@@ -146,6 +151,8 @@ class SwiftStorageBackend(StorageBackend):
             _, objects = self._conn.get_container(
                 self._container, prefix=prefix, delimiter="/"
             )
+        except (TimeoutError, socket.timeout):
+            raise
         except Exception:
             logger.exception("Error listing path: %s", path)
             return []
@@ -186,6 +193,8 @@ class SwiftStorageBackend(StorageBackend):
             headers, content = self._conn.get_object(
                 self._container, path.strip("/"), resp_chunk_size=65536
             )
+        except (TimeoutError, socket.timeout):
+            raise
         except Exception:
             logger.exception("Error getting file: %s", path)
             return Response(status_code=404)
@@ -205,6 +214,8 @@ class SwiftStorageBackend(StorageBackend):
                 contents=content,
                 content_type=mime_type or "application/octet-stream",
             )
+        except (TimeoutError, socket.timeout):
+            raise
         except Exception:
             logger.exception("Error writing file: %s", path)
 
@@ -233,7 +244,7 @@ def _build_swift_backend() -> Optional[StorageBackend]:
 
         return SwiftStorageBackend(
             container=container_name,
-            connection=Connection(session=keystone_session),
+            connection=Connection(session=keystone_session, timeout=10),
         )
     return None
 
